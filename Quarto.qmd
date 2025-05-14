@@ -1,0 +1,129 @@
+---
+title: "MM Tax Estimator "
+format:
+  html:
+    theme: minty
+    code-link: false
+execute:
+  freeze: auto   # static HTML still works
+  echo: false    # hide code blocks
+  warning: false
+  message: false
+---
+
+
+**Interactive calculator**  Give your *total* monthly expenditure and what share of it flows through mobile money. The app estimates the taxes you end up paying under typical Ugandan middle‑income usage (many small daily payments, some withdrawals).
+
+```{ojs}
+import {Inputs, Plot} from "@observablehq/inputs";
+```
+
+# {.sidebar}
+
+```{ojs}
+viewof expense = Inputs.number({
+  label: "Total expenditure per month (UGX)",
+  value: 1_200_000,
+  step: 50_000,
+  min: 0
+})
+
+viewof momo_pct = Inputs.range([0,100], {
+  label: "% of that spend done via Mobile Money",
+  value: 60,
+  step: 1
+})
+```
+
+
+
+### Calculations
+
+```{ojs}
+// — User inputs —
+expense_val = Number(expense);
+momo_share = Number(momo_pct) / 100;
+mobile_spend = expense_val * momo_share;
+
+// — Usage assumptions —
+withdraw_share = 0.50;      // 50% withdrawals
+send_share = 0.50;          // 50% sends/payments
+txn_per_day = 5;            // 5 transactions/day (avg)
+days_per_month = 30;        // 30-day month
+total_txns = txn_per_day * days_per_month;  // 150 transactions/month
+
+// — Fee structure —
+withdrawal_fee_rate = 0.01;  // 1% on withdrawals
+send_fee_rate = 0.01;        // 1% on sends/payments
+
+// — Tax rates —
+withdraw_levy = 0.005;       // 0.5% withdrawal tax
+excise_fee_val = 0.15;       // 15% excise on fees
+vat_rate = 0.18;             // 18% VAT on (fees + excise)
+
+// — Calculations —
+// 1. Monthly transaction volumes
+withdraw_txns = total_txns * withdraw_share;  // 75 withdrawals
+send_txns = total_txns * send_share;          // 75 sends/payments
+
+// 2. Amount per transaction
+withdraw_per_txn = (mobile_spend * withdraw_share) / withdraw_txns;
+send_per_txn = (mobile_spend * send_share) / send_txns;
+
+// 3. Fee calculations
+withdrawal_fees = withdraw_per_txn * withdrawal_fee_rate * withdraw_txns;
+send_fees = send_per_txn * send_fee_rate * send_txns;
+total_fees = withdrawal_fees + send_fees;
+
+// 4. Tax calculations
+levy_withdraw = mobile_spend * withdraw_share * withdraw_levy;
+excise_on_fee = total_fees * excise_fee_val;
+vat_on_fee = (total_fees + excise_on_fee) * vat_rate;
+monthly_tax = levy_withdraw + excise_on_fee + vat_on_fee;
+annual_tax = monthly_tax * 12;
+```
+
+### Results
+
+```{ojs}
+md`
+You move **${mobile_spend.toLocaleString()} UGX** through Mobile Money each month.  
+Estimated **tax paid:** **UGX ${monthly_tax.toLocaleString()} / month** → **UGX ${annual_tax.toLocaleString()} / year**.
+`
+```
+
+### Breakdown
+
+```{ojs}
+components = [
+  {Component: "Withdrawal levy (0.5 %)", Monthly: levy_withdraw},
+  {Component: "Excise on fee (15 %)",    Monthly: excise_on_fee},
+  {Component: "VAT on fee (18 %)",       Monthly: vat_on_fee},
+  {Component: "Total",                   Monthly: monthly_tax}
+]
+
+Inputs.table(components, {
+  columns: ["Component", "Monthly"],
+  format: { Monthly: v => v.toLocaleString(undefined,{maximumFractionDigits:0}) }
+})
+```
+
+```{ojs}
+Plot.plot({
+  x: {label: "Component"},
+  y: {label: "UGX"},
+  marks: [
+    Plot.barY(components, {x: "Component", y: d => d.Monthly, fill: "#ffcb05"}),
+    Plot.text(components, {x: "Component", y: d => d.Monthly, text: d => d.Monthly.toLocaleString(), dy: -6, textAnchor: "middle", fontSize: 12})
+  ]
+})
+```
+
+
+
+### How are these numbers derived?
+
+1. **Withdrawal levy:** 0.5 % of the cash you withdraw from your wallet.
+2. **Excise on fee:** 15 % applied to the telco fee you pay for each send/withdraw.
+3. **VAT:** 18 % applied to *(fee + excise on fee)*.
+
